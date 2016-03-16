@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>.:: QCONSP 2016 - Interface Web (sem criptografia) ::.</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+<script type='text/javascript' src='http://test.mosquitto.org/mosquitto.js'></script>
+<script type='text/javascript' src='http://code.jquery.com/jquery-1.7.2.min.js'></script>
+<script src="base64-binary.js"></script>
+<script type="text/javascript">
+</script>
+</head>
+<body>
+	<center>
+	<table border = 0 width="100%">
+		<tr>
+			<td bgcolor = "#00A2E8" >
+				<center><font color =white><b>QCONSP 2016 - Interface Web (sem criptografia)</b></font><br></center><br><br>
+				<font color =white>Autor: Pedro Bertoleti</font><br>				
+			</td>
+		</tr>		
+	</table>
+	
+	
+<div id="broker">
+	<h2>Servidor / broker:</h2>
+	<input class="but" id="connect-button" type="button" value="Conectar">
+	<input class="but" id="disconnect-button" type="button" value="Desconectar">
+</div>
+<div id="publish">
+	<h2>Dados da conexão MQTT:</h2>
+	<p>Tópico de recepcao de informações: <input class="txt" id="pub-subscribe-text" type="text" value="QCON2016SPRecebe" disabled="disabled"></p>
+	<p>Tópico de publicacao de informações: <input class="txt" id="pub-subscribe-text" type="text" value="QCON2016SPEnvia"  disabled="disabled"></p>
+	<br>
+	
+	<h2>Configurações do relatório de consumo:</h2>
+	<p>Meta de consumo:<input class="txt" id="meta-comsumo" type="text" value=""> litros</p>
+	<p>E-mail (aviso de ultrapassagem do limite de consumo):<input class="txt" id="email-aviso" type="text" value=""></p>
+	<h2>Ações:</h2>
+	
+	<table width='100%' border = 0> 
+	<tr>
+		<th width='33%'><input class="but" id="publish-envia-configs-meta" type="button"    value=" Envia configurações do relatório "><br><br></th>
+		<th width='33%'><input class="but" id="publish-requisita-informacoes" type="button" value="       Requisita informações      "><br><br></th>
+		<th width='33%'><input class="but" id="publish-reset_consumo" type="button"         value="  Reseta/zera consumo acumulado   "><br><br></th>
+	</tr>
+	<tr>
+		<th  width='33%'><input class="but" id="publish-inicia-calibracao" type="button"         value="        Inicia calibração         "><br><br></td>
+		<th width='33%'><input class="but" id="publish-finaliza-calibracao" type="button"         value="       Finaliza calibração        "></td>
+		<th width='33%'></td>
+	</tr>
+	</table>
+	<br><br>
+</div>
+
+<div id="status_io"></div>
+
+<p><b>Debug da conexão MQTT:</b></p>
+<div id="debug"></div>
+    
+	<script src="tmo.js" type="text/javascript"></script>
+	</center>
+</body>
+</html>

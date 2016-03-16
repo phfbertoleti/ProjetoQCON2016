@@ -1,0 +1,243 @@
+000     @SCRATCH
+001     @SCRATCH
+001     _RETURN_
+002     @SCRATCH
+003     @SCRATCH
+004     @SCRATCH
+005     @INTERRUPT_AREA
+006     @INTERRUPT_AREA
+007     @INTERRUPT_AREA
+008     @INTERRUPT_AREA
+009     @INTERRUPT_AREA
+00A     @INTERRUPT_AREA
+00B     @INTERRUPT_AREA
+00C     @INTERRUPT_AREA
+00D     @INTERRUPT_AREA
+00E     @INTERRUPT_AREA
+00F     @INTERRUPT_AREA
+010     @INTERRUPT_AREA
+011     @INTERRUPT_AREA
+012     @INTERRUPT_AREA
+013     @INTERRUPT_AREA
+014     @INTERRUPT_AREA
+015     @INTERRUPT_AREA
+016     @INTERRUPT_AREA
+017     @INTERRUPT_AREA
+018     @INTERRUPT_AREA
+019-01A ContadorPulsos
+01B-01C FrequenciaCalculada
+01D-020 VazaoCalculada
+021-038 DadosProtocoloLeitorAgua
+039     IndiceBuffer
+03A     EstadoSerial
+03B     ContadorIntTimer
+03C     RecebeuBufferCompleto
+03D-043 VazaoAscii
+044-047 ConsumoCalculado
+048-04E ConsumoAscii
+04F-050 TempoSalvamentoConsumo
+051-056 VersaoEquipamento
+057-058 PulsosPorLitro
+059     DeveGravarConsumo
+05A     EstaEmModoCalibracao
+05B     rs232_errors
+05C-05D @sprintf_string
+05E     MAIN.i
+05F     MAIN.EnderecoEscritaEEPROM
+060     LeConsumoAcumulado.EnderecoLeituraEEPROM
+060     TrataMensagem.DadoVazio
+060     LeCalibracaoSensor.EnderecoLeituraEEPROM
+060     MAIN.@SCRATCH1
+061     LeCalibracaoSensor.i
+061     SalvaCalibracaoSensor.EnderecoEscritaEEPROM
+061     LeConsumoAcumulado.i
+061     MontaEEnviaMensagem.Opcode
+061     MontaEEnviaMensagemNula.Opcode
+061     MAIN.@SCRATCH2
+062     VerificaChaveEEPROM.EnderecoInicialChave
+062     ResetCalibracaoSensor.i
+062     ResetConsumoAcumulado.i
+062-07B MontaEEnviaMensagemNula.BufferAscii
+062     MontaEEnviaMensagem.Tamanho
+062     SalvaCalibracaoSensor.i
+062     LeConsumoAcumulado.@SCRATCH1
+062     LeCalibracaoSensor.@SCRATCH1
+062     MAIN.@SCRATCH3
+063     VerificaChaveEEPROM.i
+063-064 MontaEEnviaMensagem.Dado
+063     ResetCalibracaoSensor.EnderecoEscritaEEPROM
+063     ResetConsumoAcumulado.EnderecoEscritaEEPROM
+063     LeConsumoAcumulado.@SCRATCH2
+063     LeCalibracaoSensor.@SCRATCH2
+063     SalvaCalibracaoSensor.@SCRATCH1
+064     VerificaChaveEEPROM.Iguais
+064     ResetConsumoAcumulado.@SCRATCH1
+064     ResetCalibracaoSensor.@SCRATCH1
+064     LeConsumoAcumulado.@SCRATCH3
+064     LeCalibracaoSensor.@SCRATCH3
+064     SalvaCalibracaoSensor.@SCRATCH2
+065-07E MontaEEnviaMensagem.BufferAscii
+065     ResetConsumoAcumulado.@SCRATCH2
+065     ResetCalibracaoSensor.@SCRATCH2
+065     VerificaChaveEEPROM.@SCRATCH1
+065     LeConsumoAcumulado.@SCRATCH4
+065     LeCalibracaoSensor.@SCRATCH4
+065     SalvaCalibracaoSensor.@SCRATCH3
+066     ResetConsumoAcumulado.@SCRATCH3
+066     ResetCalibracaoSensor.@SCRATCH3
+066     VerificaChaveEEPROM.@SCRATCH2
+066     LeConsumoAcumulado.@SCRATCH5
+066     LeCalibracaoSensor.@SCRATCH5
+067     VerificaChaveEEPROM.@SCRATCH3
+07C     MontaEEnviaMensagemNula.@SCRATCH1
+07D     MontaEEnviaMensagemNula.@SCRATCH2
+07F     MontaEEnviaMensagem.CheckSumMsg
+080     MontaEEnviaMensagem.i
+081-082 MontaEEnviaMensagem.ptrDado
+083     MontaEEnviaMensagem.@SCRATCH1
+084     MontaEEnviaMensagem.@SCRATCH2
+085     serial_isr.ByteLido
+085-088 @PRINTF_L32D_119FPFPF.P1
+085-088 @ADDFF.P2
+085     TrataTimer1.@SCRATCH1
+086     MaquinaEstadoSerial.ByteRecebido
+086     TrataTimer1.@SCRATCH2
+087     AguardaOpcode.ByteRecebido
+087     AguardaEndereco.ByteRecebido
+087     AguardaSTX.ByteRecebido
+087     AguardaCheckSum.ByteRecebido
+087     AguardaTamanho.ByteRecebido
+087     AguardaBuffer.ByteRecebido
+087     TrataTimer1.@SCRATCH3
+088     @MEMSET.P1
+088     CalculaCheckSum.CheckSumCalculado
+088     TrataTimer1.@SCRATCH4
+088     AguardaBuffer.@SCRATCH1
+089     CalculaCheckSum.i
+089-08C @DIVFF.P1
+089-08A @ITOF.P2
+089     @PRINTF_L32D_119FPFPF.P3
+089-08A @MEMSET.P4
+089-08C @ADDFF.P5
+089     AguardaBuffer.@SCRATCH2
+08A     @PRINTF_L32D_119FPFPF.@SCRATCH1
+08A     CalculaCheckSum.@SCRATCH1
+08B     @PRINTF_L32D_119FPFPF.@SCRATCH2
+08C     @PRINTF_L32D_119FPFPF.@SCRATCH3
+08D-090 @DIVFF.P1
+08D     @PRINTF_L32D_119FPFPF.@SCRATCH4
+08D     @ADDFF.@SCRATCH1
+08E     @PRINTF_L32D_119FPFPF.@SCRATCH5
+08E     @ADDFF.@SCRATCH2
+08F     @PRINTF_L32D_119FPFPF.@SCRATCH6
+08F     @ADDFF.@SCRATCH3
+090     @PRINTF_L32D_119FPFPF.@SCRATCH7
+090     @ADDFF.@SCRATCH4
+091     @PRINTF_L32D_119FPFPF.@SCRATCH8
+091     @DIVFF.@SCRATCH1
+091     @ADDFF.@SCRATCH5
+092-095 @MULFF.P1
+092     @SPRINTF.P2
+092-095 @DIV3232.P3
+092-095 @FTOSD.P4
+092     @DIVFF.@SCRATCH2
+092     @ADDFF.@SCRATCH6
+093     @DIVFF.@SCRATCH3
+093     @ADDFF.@SCRATCH7
+094     @DIVFF.@SCRATCH4
+094     @ADDFF.@SCRATCH8
+095     @DIVFF.@SCRATCH5
+096-099 @MULFF.P1
+096-099 @DIV3232.P2
+096     @FTOSD.@SCRATCH1
+096     @DIVFF.@SCRATCH6
+09A     @MULFF.@SCRATCH1
+09A     @DIV3232.@SCRATCH1
+09B     @MULFF.@SCRATCH2
+09B     @DIV3232.@SCRATCH2
+09C     @MULFF.@SCRATCH3
+09C     @DIV3232.@SCRATCH3
+09D     @DIV3232.@SCRATCH4
+09E     @DIV3232.@SCRATCH5
+F83     PSP_DATA
+FB4.6   C1OUT
+FB4.7   C2OUT
+FBB     CCP_2_LOW
+FBB-FBC CCP_2
+FBC     CCP_2_HIGH
+FBE     CCP_1_LOW
+FBE-FBF CCP_1
+FBF     CCP_1_HIGH
+FE9-FEA @READ_PROGRAM_MEMORY.P1
+FE9-FEA @WRITE_PROGRAM_MEMORY.P2
+FE9-FEA @MEMSET.P3
+FF6-FF8 @WRITE_PROGRAM_MEMORY.P1
+FF6-FF8 @READ_PROGRAM_MEMORY.P2
+
+ROM Allocation:
+00B6  ChaveEEPROM
+00F0  @GETCH_BIU_1
+00E4  EXT_isr
+027C  serial_isr
+09E8  TrataTimer1
+0108  @MEMSET
+043A  @SPRINTF
+028E  @MULFF
+0380  @FTOSD
+03C0  @DIV3232
+0456  @PRINTF_L32D_119FPFPF
+05D4  @ITOF
+060A  @DIVFF
+0766  @ADDFF
+0122  AguardaSTX
+0146  AguardaEndereco
+015C  AguardaOpcode
+0168  AguardaTamanho
+0180  AguardaCheckSum
+01E4  AguardaBuffer
+019A  CalculaCheckSum
+0220  MaquinaEstadoSerial
+09D2  ConfigInterrupcaoUART
+09DA  ConfigInterrupcaoEXT
+0EA6  ConfigTimer1
+0F12  MontaEEnviaMensagem
+0EBE  MontaEEnviaMensagemNula
+1074  TrataMensagem
+0C50  ResetConsumoAcumulado
+0D7C  ResetCalibracaoSensor
+0BF2  VerificaChaveEEPROM
+0D26  LeConsumoAcumulado
+0E50  LeCalibracaoSensor
+0FB2  SalvaCalibracaoSensor
+110C  MAIN
+110C  @cinit
+
+Project Directory:
+    C:\Apresentação QCON 2016\Demonstração\LeitorFluxoAguaCCS\
+
+Project Files:
+    leitorfluxoagua.c
+    ..\..\..\PROGRA~2\PICC\devices\18F4520.h
+    HeaderLeitor.h
+
+Units:
+    leitorfluxoagua.c (main)
+
+Compiler Settings:
+    Processor:      PIC18F4520
+    Pointer Size:   16
+    ADC Range:      0-255
+    Opt Level:      9
+    Short,Int,Long: UNSIGNED: 1,8,16
+    Float,Double:   32,32
+
+Output Files:
+    Errors:      leitorfluxoagua.err
+    Ext Symbols: leitorfluxoagua.esym
+    INHX32:      leitorfluxoagua.hex
+    Symbols:     leitorfluxoagua.sym
+    List:        leitorfluxoagua.lst
+    Debug/COFF:  leitorfluxoagua.cof
+    Project:     leitorfluxoagua.PJT
+    Call Tree:   leitorfluxoagua.tre
+    Statistics:  leitorfluxoagua.sta

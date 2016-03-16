@@ -1,0 +1,1987 @@
+CCS PCH C Compiler, Version 4.057, 48135               08-mar-16 23:58
+
+               Filename: leitorfluxoagua.lst
+
+               ROM used: 4596 bytes (14%)
+                         Largest free fragment is 28168
+               RAM used: 99 (6%) at main() level
+                         159 (10%) worst case
+               Stack:    7 worst case (3 in main + 4 for interrupts)
+
+*
+0000:  GOTO   110C
+*
+0008:  MOVWF  05
+000A:  MOVFF  FD8,06
+000E:  MOVFF  FE0,07
+0012:  MOVLB  0
+0014:  MOVFF  FE9,0D
+0018:  MOVFF  FEA,08
+001C:  MOVFF  FE1,09
+0020:  MOVFF  FE2,0A
+0024:  MOVFF  FD9,0B
+0028:  MOVFF  FDA,0C
+002C:  MOVFF  FF3,14
+0030:  MOVFF  FF4,15
+0034:  MOVFF  FFA,16
+0038:  MOVFF  00,0F
+003C:  MOVFF  01,10
+0040:  MOVFF  02,11
+0044:  MOVFF  03,12
+0048:  MOVFF  04,13
+004C:  BTFSS  F9D.0
+004E:  GOTO   0058
+0052:  BTFSC  F9E.0
+0054:  GOTO   09E8
+0058:  BTFSS  FF2.4
+005A:  GOTO   0064
+005E:  BTFSC  FF2.1
+0060:  GOTO   00E4
+0064:  BTFSS  F9D.5
+0066:  GOTO   0070
+006A:  BTFSC  F9E.5
+006C:  GOTO   027C
+0070:  MOVFF  0F,00
+0074:  MOVFF  10,01
+0078:  MOVFF  11,02
+007C:  MOVFF  12,03
+0080:  MOVFF  13,04
+0084:  BSF    0E.7
+0086:  MOVFF  0D,FE9
+008A:  MOVFF  08,FEA
+008E:  MOVFF  09,FE1
+0092:  MOVFF  0A,FE2
+0096:  MOVFF  0B,FD9
+009A:  MOVFF  0C,FDA
+009E:  MOVFF  14,FF3
+00A2:  MOVFF  15,FF4
+00A6:  MOVFF  16,FFA
+00AA:  MOVF   05,W
+00AC:  MOVFF  07,FE0
+00B0:  MOVFF  06,FD8
+00B4:  RETFIE 0
+.................... //Firmware leitor de fluxo de água (demonstração da palestra "Embedded Systems e IoT: do bare-metal à comunicação wireless segura", realizado no QCON 2016) 
+.................... //Autor: Pedro Bertoleti 
+.................... //Data: 02/2016 
+.................... //IMPORTANTE: deve ser compilado com o compilador CCS v4.093 
+....................  
+....................  
+.................... #include <18F4520.h> 
+.................... //////// Standard Header file for the PIC18F4520 device //////////////// 
+.................... #device PIC18F4520 
+.................... #list 
+....................  
+.................... #include "HeaderLeitor.h" 
+.................... //Header geral do leitor de fluxo de água (demonstração da palestra "Embedded Systems e IoT: do bare-metal à comunicação wireless segura", realizado no QCON 2016) 
+.................... //Autor: Pedro Bertoleti 
+.................... //Data: 02/2016 
+....................  
+.................... #define VERSAO             "V1.00" 
+....................  
+.................... #define ENDERECO_BAREMETAL 1 
+....................  
+.................... #define SIM               1 
+.................... #define NAO               0 
+....................  
+.................... //defines gerais do protocolo 
+.................... #define MAX_TAM_BUFFER    20 
+.................... #define STX               0x02 
+.................... #define CHECKSUM_OK       1 
+.................... #define FALHA_CHECKSUM    0 
+.................... #define RECEPCAO_OK       1 
+.................... #define SEM_RECEPCAO      0 
+....................  
+.................... //defines dos estados 
+.................... #define ESTADO_STX                   1 
+.................... #define ESTADO_ENDERECO              2 
+.................... #define ESTADO_OPCODE                3 
+.................... #define ESTADO_TAMANHO               4 
+.................... #define ESTADO_CHECKSUM              5 
+.................... #define ESTADO_BUFFER                6 
+....................  
+.................... //defines dos opcodes do protocolo 
+.................... #define OPCODE_RESET_CONSUMO         'R' 
+.................... #define OPCODE_LEITURA_CONSUMO       'L' 
+.................... #define OPCODE_LEITURA_VAZAO         'V' 
+.................... #define OPCODE_LEITURA_VERSAO        'Q' 
+.................... #define OPCODE_ENTRA_EM_CALIBRACAO   'E' 
+.................... #define OPCODE_SAI_DA_CALIBRACAO     'S' 
+....................  
+.................... //defines vinculados ao salvamento do consumo acumulado na eeprom 
+.................... #define ENDERECOCHAVE                        1   
+.................... #define TEMPO_SALVAMENTO_CONSUMO_SEGUNDOS    18000 //5h 
+....................  
+.................... //defines vinculados a calibração 
+.................... #define ENDERECOCALIBRACAO                   64 
+....................  
+....................  
+.................... //estruturas / typedefs 
+.................... typedef struct 
+.................... {	 
+....................     char Endereco; 
+.................... 	char Opcode; 
+.................... 	char TamanhoMensagem;						 
+.................... 	char CheckSum;					 
+.................... 	char Buffer[MAX_TAM_BUFFER];					 
+.................... } TDadosProtocoloLeitorAgua; 
+....................  
+.................... //variáveis globais 
+.................... long ContadorPulsos; 
+.................... long FrequenciaCalculada; 
+.................... float VazaoCalculada; 
+.................... TDadosProtocoloLeitorAgua  DadosProtocoloLeitorAgua; 
+.................... char IndiceBuffer; 
+.................... volatile char EstadoSerial; 
+.................... volatile char ContadorIntTimer; 
+.................... char RecebeuBufferCompleto; 
+.................... volatile char VazaoAscii[7]; 
+.................... float ConsumoCalculado; 
+.................... char ConsumoAscii[7]; 
+.................... long TempoSalvamentoConsumo; 
+.................... const char ChaveEEPROM[] = "PedroBertoleti2015";  
+.................... char VersaoEquipamento[] = VERSAO;  
+.................... long PulsosPorLitro;   //contém o numero de pulsos do sensor equivalentes a 1l de água consumido 
+.................... char DeveGravarConsumo; 
+.................... volatile char EstaEmModoCalibracao;   //indica se equipamento está em modo de calibração 
+....................  
+.................... #use delay(clock=4000000) 	//Clock de 4MHz (clock útil de 1MHz) 
+.................... #fuses WDT128,HS,PUT,NOPROTECT 
+.................... #use rs232(baud=9600,parity=N,xmit=PIN_C6,rcv=PIN_C7,bits=8,ERRORS) 
+*
+00F0:  BTFSS  F9E.5
+00F2:  BRA    00F0
+00F4:  MOVFF  FAB,5B
+00F8:  MOVFF  FAE,01
+00FC:  BTFSS  5B.1
+00FE:  BRA    0104
+0100:  BCF    FAB.4
+0102:  BSF    FAB.4
+0104:  GOTO   027E (RETURN)
+.................... #priority INT_TIMER1, INT_EXT, INT_RDA  //ordem de prioridad das interrupções (ordem decrescente de prioridade) 
+....................  
+.................... //defines gerais:  
+....................  
+.................... //saída (breathing light) 
+.................... #define BREATHING_LIGHT             PIN_A0 
+.................... #define TAMANHO_MSG_RESPOSTA        sizeof(TDadosProtocoloLeitorAgua) + 2 
+.................... #define TAMANHO_CHAVE_EEPROM        sizeof(ChaveEEPROM) 
+.................... #define TAMANHO_VERSAO              sizeof(VersaoEquipamento)-1 
+.................... #define TAMANHO_VAZAO_ASCII         6 
+.................... #define TAMANHO_CONSUMO_ASCII       6 
+....................  
+.................... //prototypes 
+.................... void ConfigInterrupcaoEXT(void); 
+.................... void ConfigInterrupcaoUART(void); 
+.................... void ConfigTimer1(void); 
+.................... void TrataMensagem(void); 
+.................... void LeConsumoAcumulado(void); 
+.................... void LeCalibracaoSensor(void); 
+.................... void SalvaCalibracaoSensor(void); 
+.................... void ResetConsumoAcumulado(void); 
+.................... void ResetCalibracaoSensor(void); 
+.................... char VerificaChaveEEPROM(char EnderecoInicialChave); 
+.................... void MontaEEnviaMensagem(char Opcode, char Tamanho, char * Dado); 
+.................... void MontaEEnviaMensagemNula(char Opcode); 
+.................... void AguardaSTX(); 
+.................... void AguardaEndereco(char ByteRecebido); 
+.................... void AguardaOpcode(char ByteRecebido); 
+.................... void AguardaTamanho(char ByteRecebido); 
+.................... void AguardaCheckSum(char ByteRecebido); 
+.................... void AguardaBuffer(char ByteRecebido); 
+.................... char CalculaCheckSum(void); 
+.................... void MaquinaEstadoSerial(char ByteRecebido); 
+....................  
+....................  
+.................... //tratamento da interrupção externa 
+.................... #int_EXT  
+.................... void  EXT_isr(void)  
+.................... {  
+.................... 	ContadorPulsos++;     
+*
+00E4:  INCF   19,F
+00E6:  BTFSC  FD8.2
+00E8:  INCF   1A,F
+.................... }  
+....................  
+.................... //tratamento da interrupção serial 
+00EA:  BCF    FF2.1
+00EC:  GOTO   0070
+.................... #INT_RDA 
+.................... void serial_isr() 
+.................... {  
+....................     char ByteLido; 
+....................     ByteLido = getc(); 
+*
+027C:  BRA    00F0
+027E:  MOVFF  01,85
+....................     MaquinaEstadoSerial(ByteLido); 
+0282:  MOVFF  85,86
+0286:  BRA    0220
+.................... }  
+....................  
+.................... //tratamento da interrupção de timer 
+0288:  BCF    F9E.5
+028A:  GOTO   0070
+.................... #INT_TIMER1 
+.................... void TrataTimer1() 
+.................... { 
+.................... 	ContadorIntTimer++; 
+*
+09E8:  INCF   3B,F
+....................  
+....................     if (ContadorIntTimer < 5)   //cada "tick" do timer1 tem 0,2s. Logo, 5 "tiks" equivalem a 1 segundo 
+09EA:  MOVF   3B,W
+09EC:  SUBLW  04
+09EE:  BNC   09FA
+....................     { 
+....................         set_timer1(15536); 
+09F0:  MOVLW  3C
+09F2:  MOVWF  FCF
+09F4:  MOVLW  B0
+09F6:  MOVWF  FCE
+.................... 		return; 
+09F8:  BRA    0BEC
+.................... 	} 
+....................  
+.................... 	if (EstaEmModoCalibracao == SIM)  //se o equipamento está em modo calibração, nada deve ser feito aqui 
+09FA:  DECFSZ 5A,W
+09FC:  BRA    0A08
+.................... 	{ 
+.................... 		set_timer1(15536); 
+09FE:  MOVLW  3C
+0A00:  MOVWF  FCF
+0A02:  MOVLW  B0
+0A04:  MOVWF  FCE
+.................... 		return; 
+0A06:  BRA    0BEC
+.................... 	} 
+.................... 	 
+.................... 	if (PulsosPorLitro == 0) //não há calibração do sensor realizada. Nenhum calculo é feito 
+0A08:  MOVF   57,F
+0A0A:  BNZ   0A8E
+0A0C:  MOVF   58,F
+0A0E:  BNZ   0A8E
+.................... 	{ 
+.................... 		VazaoCalculada = 0;	 
+0A10:  CLRF   20
+0A12:  CLRF   1F
+0A14:  CLRF   1E
+0A16:  CLRF   1D
+.................... 		memset(VazaoAscii,0,sizeof(VazaoAscii)); 
+0A18:  CLRF   FEA
+0A1A:  MOVLW  3D
+0A1C:  MOVWF  FE9
+0A1E:  CLRF   x88
+0A20:  CLRF   x8A
+0A22:  MOVLW  07
+0A24:  MOVWF  x89
+0A26:  CALL   0108
+....................     	sprintf(VazaoAscii,"%6.2f",VazaoCalculada); 
+0A2A:  CLRF   5D
+0A2C:  MOVLW  3D
+0A2E:  MOVWF  5C
+0A30:  MOVLW  05
+0A32:  MOVWF  FE9
+0A34:  MOVFF  20,88
+0A38:  MOVFF  1F,87
+0A3C:  MOVFF  1E,86
+0A40:  MOVFF  1D,85
+0A44:  MOVLW  02
+0A46:  MOVWF  x89
+0A48:  RCALL  0456
+....................  
+.................... 		ConsumoCalculado = 0; 
+0A4A:  CLRF   47
+0A4C:  CLRF   46
+0A4E:  CLRF   45
+0A50:  CLRF   44
+.................... 		memset(ConsumoAscii,0,sizeof(ConsumoAscii)); 
+0A52:  CLRF   FEA
+0A54:  MOVLW  48
+0A56:  MOVWF  FE9
+0A58:  CLRF   x88
+0A5A:  CLRF   x8A
+0A5C:  MOVLW  07
+0A5E:  MOVWF  x89
+0A60:  CALL   0108
+....................     	sprintf(ConsumoAscii,"%6.2f",ConsumoCalculado); 
+0A64:  CLRF   5D
+0A66:  MOVLW  48
+0A68:  MOVWF  5C
+0A6A:  MOVLW  05
+0A6C:  MOVWF  FE9
+0A6E:  MOVFF  47,88
+0A72:  MOVFF  46,87
+0A76:  MOVFF  45,86
+0A7A:  MOVFF  44,85
+0A7E:  MOVLW  02
+0A80:  MOVWF  x89
+0A82:  RCALL  0456
+....................  
+.................... 		set_timer1(15536); 
+0A84:  MOVLW  3C
+0A86:  MOVWF  FCF
+0A88:  MOVLW  B0
+0A8A:  MOVWF  FCE
+.................... 		return; 
+0A8C:  BRA    0BEC
+.................... 	} 
+.................... 	 
+....................     //1 segundo se passou 
+....................     ContadorIntTimer=0; 
+0A8E:  CLRF   3B
+....................     TempoSalvamentoConsumo++; 
+0A90:  INCF   4F,F
+0A92:  BTFSC  FD8.2
+0A94:  INCF   50,F
+....................  
+....................    	//deliga todas interrupções 
+....................     disable_interrupts(INT_RDA); 
+0A96:  BCF    F9D.5
+....................     disable_interrupts(INT_EXT); 
+0A98:  BCF    FF2.4
+....................  
+....................     //calcula vazão em l/h 
+....................     FrequenciaCalculada = ContadorPulsos; 
+0A9A:  MOVFF  1A,1C
+0A9E:  MOVFF  19,1B
+.................... 	VazaoCalculada = 0; 
+0AA2:  CLRF   20
+0AA4:  CLRF   1F
+0AA6:  CLRF   1E
+0AA8:  CLRF   1D
+....................  
+....................     /* 
+....................                 Pulsos                    Volume     Tempo 
+....................                	PulsosPorLitro      ---     1l   --- 1s 
+.................... 				FrequenciaCalculada ---      x   --- 1s  
+....................                  
+.................... 				x = FrequenciaCalculada / PulsosPorLitro 
+.................... 				 
+....................     */ 
+....................     VazaoCalculada = (float)((float)FrequenciaCalculada / (float)PulsosPorLitro);  //l/s 
+0AAA:  MOVFF  1C,8A
+0AAE:  MOVFF  1B,89
+0AB2:  RCALL  05D4
+0AB4:  MOVFF  00,85
+0AB8:  MOVFF  01,86
+0ABC:  MOVFF  02,87
+0AC0:  MOVFF  03,88
+0AC4:  MOVFF  58,8A
+0AC8:  MOVFF  57,89
+0ACC:  RCALL  05D4
+0ACE:  MOVFF  88,8C
+0AD2:  MOVFF  87,8B
+0AD6:  MOVFF  86,8A
+0ADA:  MOVFF  85,89
+0ADE:  MOVFF  03,90
+0AE2:  MOVFF  02,8F
+0AE6:  MOVFF  01,8E
+0AEA:  MOVFF  00,8D
+0AEE:  BRA    060A
+0AF0:  MOVFF  03,20
+0AF4:  MOVFF  02,1F
+0AF8:  MOVFF  01,1E
+0AFC:  MOVFF  00,1D
+.................... 	 
+....................     ConsumoCalculado = ConsumoCalculado + VazaoCalculada;    //contabiliza consumo deste periodo 
+0B00:  BCF    FD8.1
+0B02:  MOVFF  47,88
+0B06:  MOVFF  46,87
+0B0A:  MOVFF  45,86
+0B0E:  MOVFF  44,85
+0B12:  MOVFF  20,8C
+0B16:  MOVFF  1F,8B
+0B1A:  MOVFF  1E,8A
+0B1E:  MOVFF  1D,89
+0B22:  BRA    0766
+0B24:  MOVFF  03,47
+0B28:  MOVFF  02,46
+0B2C:  MOVFF  01,45
+0B30:  MOVFF  00,44
+.................... 	VazaoCalculada = VazaoCalculada*3600.0;   //l/h 
+0B34:  MOVFF  20,95
+0B38:  MOVFF  1F,94
+0B3C:  MOVFF  1E,93
+0B40:  MOVFF  1D,92
+0B44:  CLRF   x99
+0B46:  CLRF   x98
+0B48:  MOVLW  61
+0B4A:  MOVWF  x97
+0B4C:  MOVLW  8A
+0B4E:  MOVWF  x96
+0B50:  CALL   028E
+0B54:  MOVFF  03,20
+0B58:  MOVFF  02,1F
+0B5C:  MOVFF  01,1E
+0B60:  MOVFF  00,1D
+....................  
+.................... 	memset(VazaoAscii,0,sizeof(VazaoAscii)); 
+0B64:  CLRF   FEA
+0B66:  MOVLW  3D
+0B68:  MOVWF  FE9
+0B6A:  CLRF   x88
+0B6C:  CLRF   x8A
+0B6E:  MOVLW  07
+0B70:  MOVWF  x89
+0B72:  CALL   0108
+....................     sprintf(VazaoAscii,"%6.2f",VazaoCalculada); 
+0B76:  CLRF   5D
+0B78:  MOVLW  3D
+0B7A:  MOVWF  5C
+0B7C:  MOVLW  05
+0B7E:  MOVWF  FE9
+0B80:  MOVFF  20,88
+0B84:  MOVFF  1F,87
+0B88:  MOVFF  1E,86
+0B8C:  MOVFF  1D,85
+0B90:  MOVLW  02
+0B92:  MOVWF  x89
+0B94:  RCALL  0456
+....................  
+....................     //calcula consumo e o formata para ascii 
+....................     memset(ConsumoAscii,0,sizeof(ConsumoAscii)); 
+0B96:  CLRF   FEA
+0B98:  MOVLW  48
+0B9A:  MOVWF  FE9
+0B9C:  CLRF   x88
+0B9E:  CLRF   x8A
+0BA0:  MOVLW  07
+0BA2:  MOVWF  x89
+0BA4:  CALL   0108
+....................     sprintf(ConsumoAscii,"%6.2f",ConsumoCalculado); 
+0BA8:  CLRF   5D
+0BAA:  MOVLW  48
+0BAC:  MOVWF  5C
+0BAE:  MOVLW  05
+0BB0:  MOVWF  FE9
+0BB2:  MOVFF  47,88
+0BB6:  MOVFF  46,87
+0BBA:  MOVFF  45,86
+0BBE:  MOVFF  44,85
+0BC2:  MOVLW  02
+0BC4:  MOVWF  x89
+0BC6:  RCALL  0456
+.................... 	 
+....................     //verifica se deve salvar na eeprom o consumo total 
+....................     if (TempoSalvamentoConsumo >= TEMPO_SALVAMENTO_CONSUMO_SEGUNDOS)   
+0BC8:  MOVF   50,W
+0BCA:  SUBLW  45
+0BCC:  BC    0BDC
+0BCE:  XORLW  FF
+0BD0:  BNZ   0BD8
+0BD2:  MOVF   4F,W
+0BD4:  SUBLW  4F
+0BD6:  BC    0BDC
+.................... 		DeveGravarConsumo = SIM; 
+0BD8:  MOVLW  01
+0BDA:  MOVWF  59
+.................... 	 
+....................     //troca o estado da saída do breathing light 
+.................... 	output_toggle(BREATHING_LIGHT); 
+0BDC:  BCF    F92.0
+0BDE:  BTG    F89.0
+....................       
+....................     //configura timer e religa interrupções	 
+....................     set_timer1(15536); 
+0BE0:  MOVLW  3C
+0BE2:  MOVWF  FCF
+0BE4:  MOVLW  B0
+0BE6:  MOVWF  FCE
+....................     ConfigInterrupcaoUART(); 
+0BE8:  RCALL  09D2
+....................     ConfigInterrupcaoEXT();	 
+0BEA:  RCALL  09DA
+.................... } 
+....................  
+.................... //Aguarda STX - função da máquina de estados da comunicação serial 
+.................... //parametros: byte recebido 
+.................... //saida: nenhum 
+0BEC:  BCF    F9E.0
+0BEE:  GOTO   0070
+.................... void AguardaSTX(char ByteRecebido) 
+.................... { 
+....................     if (ByteRecebido == STX) 
+*
+0122:  MOVF   x87,W
+0124:  SUBLW  02
+0126:  BNZ   013E
+.................... 	{ 
+.................... 		memset(&DadosProtocoloLeitorAgua, 0, sizeof(TDadosProtocoloLeitorAgua));   //limpa dados do protocolo 
+0128:  CLRF   FEA
+012A:  MOVLW  21
+012C:  MOVWF  FE9
+012E:  CLRF   x88
+0130:  CLRF   x8A
+0132:  MOVLW  18
+0134:  MOVWF  x89
+0136:  RCALL  0108
+.................... 		EstadoSerial = ESTADO_ENDERECO; 
+0138:  MOVLW  02
+013A:  MOVWF  3A
+.................... 	} 
+.................... 	else 
+013C:  BRA    0142
+.................... 		EstadoSerial = ESTADO_STX; 
+013E:  MOVLW  01
+0140:  MOVWF  3A
+.................... } 
+0142:  GOTO   0278 (RETURN)
+....................  
+.................... //Aguarda endereço do destinatário da mensagem - função da máquina de estados da comunicação serial 
+.................... //parametros: byte recebido 
+.................... //saida: nenhum 
+.................... void AguardaEndereco(char ByteRecebido) 
+.................... { 
+....................     DadosProtocoloLeitorAgua.Endereco = ByteRecebido; 
+0146:  MOVFF  87,21
+.................... 	 
+.................... 	if (DadosProtocoloLeitorAgua.Endereco == ENDERECO_BAREMETAL) 
+014A:  DECFSZ 21,W
+014C:  BRA    0154
+.................... 		EstadoSerial = ESTADO_OPCODE;	 
+014E:  MOVLW  03
+0150:  MOVWF  3A
+.................... 	else 
+0152:  BRA    0158
+.................... 		EstadoSerial = ESTADO_STX;	 
+0154:  MOVLW  01
+0156:  MOVWF  3A
+.................... } 
+0158:  GOTO   0278 (RETURN)
+....................  
+.................... //Aguarda Opcode da mensagem - função da máquina de estados da comunicação serial 
+.................... //parametros: byte recebido 
+.................... //saida: nenhum 
+.................... void AguardaOpcode(char ByteRecebido) 
+.................... { 
+....................     DadosProtocoloLeitorAgua.Opcode = ByteRecebido; 
+015C:  MOVFF  87,22
+.................... 	EstadoSerial = ESTADO_TAMANHO;	 
+0160:  MOVLW  04
+0162:  MOVWF  3A
+.................... } 
+0164:  GOTO   0278 (RETURN)
+....................  
+.................... //Aguarda tamanho da mensagem - função da máquina de estados da comunicação serial 
+.................... //parametros: byte recebido 
+.................... //saida: nenhum 
+.................... void AguardaTamanho(char ByteRecebido) 
+.................... { 
+.................... 	if (ByteRecebido > MAX_TAM_BUFFER) 
+0168:  MOVF   x87,W
+016A:  SUBLW  14
+016C:  BC    0174
+.................... 		EstadoSerial = ESTADO_STX;   //tamanho recebido é inválido (maior que o máximo permitido). A máquina de estados é resetada. 
+016E:  MOVLW  01
+0170:  MOVWF  3A
+.................... 	else 
+0172:  BRA    017C
+.................... 	{	 
+.................... 		DadosProtocoloLeitorAgua.TamanhoMensagem = ByteRecebido; 
+0174:  MOVFF  87,23
+.................... 		EstadoSerial = ESTADO_CHECKSUM;	 
+0178:  MOVLW  05
+017A:  MOVWF  3A
+.................... 	} 
+.................... } 
+017C:  GOTO   0278 (RETURN)
+....................  
+.................... //Aguarda checksum da mensagem - função da máquina de estados da comunicação serial 
+.................... //parametros: byte recebido 
+.................... //saida: nenhum 
+.................... void AguardaCheckSum(char ByteRecebido) 
+.................... {	 
+....................     DadosProtocoloLeitorAgua.CheckSum = ByteRecebido; 
+0180:  MOVFF  87,24
+.................... 	if(DadosProtocoloLeitorAgua.TamanhoMensagem > 0) 
+0184:  MOVF   23,F
+0186:  BZ    0190
+.................... 	{ 
+.................... 		IndiceBuffer = 0; 
+0188:  CLRF   39
+.................... 		EstadoSerial = ESTADO_BUFFER; 
+018A:  MOVLW  06
+018C:  MOVWF  3A
+.................... 	} 
+.................... 	else 
+018E:  BRA    0196
+.................... 	{ 
+.................... 		RecebeuBufferCompleto = 1; 
+0190:  MOVLW  01
+0192:  MOVWF  3C
+.................... 		EstadoSerial = ESTADO_STX; 
+0194:  MOVWF  3A
+.................... 	} 
+.................... } 
+0196:  GOTO   0278 (RETURN)
+....................  
+.................... //Aguarda buffer da mensagem - função da máquina de estados da comunicação serial 
+.................... //parametros: byte recebido 
+.................... //saida: nenhum 
+.................... void AguardaBuffer(char ByteRecebido) 
+.................... { 
+....................     if(IndiceBuffer < DadosProtocoloLeitorAgua.TamanhoMensagem) 
+*
+01E4:  MOVF   23,W
+01E6:  SUBWF  39,W
+01E8:  BC    020A
+.................... 	{ 
+.................... 		DadosProtocoloLeitorAgua.Buffer[IndiceBuffer] = ByteRecebido; 
+01EA:  CLRF   03
+01EC:  MOVF   39,W
+01EE:  ADDLW  04
+01F0:  MOVWF  01
+01F2:  MOVLW  00
+01F4:  ADDWFC 03,F
+01F6:  MOVF   01,W
+01F8:  ADDLW  21
+01FA:  MOVWF  FE9
+01FC:  MOVLW  00
+01FE:  ADDWFC 03,W
+0200:  MOVWF  FEA
+0202:  MOVFF  87,FEF
+.................... 		IndiceBuffer++; 
+0206:  INCF   39,F
+.................... 	} 
+.................... 	else 
+0208:  BRA    021C
+.................... 	{ 
+.................... 		//buffer completo. Faz o tratamento da mensagem e reinicia máquina de estados 
+.................... 		if (CalculaCheckSum() == CHECKSUM_OK) 
+020A:  BRA    019A
+020C:  DECFSZ 01,W
+020E:  BRA    0216
+.................... 			RecebeuBufferCompleto = RECEPCAO_OK; 
+0210:  MOVLW  01
+0212:  MOVWF  3C
+.................... 		else 
+0214:  BRA    0218
+....................             RecebeuBufferCompleto = SEM_RECEPCAO; 
+0216:  CLRF   3C
+.................... 	 
+.................... 		EstadoSerial = ESTADO_STX; 
+0218:  MOVLW  01
+021A:  MOVWF  3A
+.................... 	} 
+.................... } 
+021C:  GOTO   0278 (RETURN)
+....................  
+.................... //Checa o checksum da mensagem recebida pela UART 
+.................... //parametros: nenhum 
+.................... //saida: nenhum 
+.................... char CalculaCheckSum(void) 
+.................... { 
+.................... 	char CheckSumCalculado; 
+.................... 	char i; 
+.................... 	 
+.................... 	CheckSumCalculado = 0; 
+*
+019A:  CLRF   x88
+.................... 	 
+.................... 	for(i=0; i<DadosProtocoloLeitorAgua.TamanhoMensagem; i++) 
+019C:  CLRF   x89
+019E:  MOVF   23,W
+01A0:  SUBWF  x89,W
+01A2:  BC    01C4
+.................... 		CheckSumCalculado = CheckSumCalculado + DadosProtocoloLeitorAgua.Buffer[i]; 
+01A4:  CLRF   03
+01A6:  MOVF   x89,W
+01A8:  ADDLW  04
+01AA:  MOVWF  01
+01AC:  MOVLW  00
+01AE:  ADDWFC 03,F
+01B0:  MOVF   01,W
+01B2:  ADDLW  21
+01B4:  MOVWF  FE9
+01B6:  MOVLW  00
+01B8:  ADDWFC 03,W
+01BA:  MOVWF  FEA
+01BC:  MOVF   FEF,W
+01BE:  ADDWF  x88,F
+01C0:  INCF   x89,F
+01C2:  BRA    019E
+.................... 		 
+.................... 	CheckSumCalculado = (~CheckSumCalculado) +1; 
+01C4:  MOVF   x88,W
+01C6:  XORLW  FF
+01C8:  ADDLW  01
+01CA:  MOVWF  x88
+.................... 	 
+.................... 	if (CheckSumCalculado == DadosProtocoloLeitorAgua.CheckSum) 
+01CC:  MOVF   24,W
+01CE:  SUBWF  x88,W
+01D0:  BNZ   01DA
+.................... 		return CHECKSUM_OK; 
+01D2:  MOVLW  01
+01D4:  MOVWF  01
+01D6:  BRA    01E0
+.................... 	else 
+01D8:  BRA    01E0
+.................... 		return FALHA_CHECKSUM; 
+01DA:  MOVLW  00
+01DC:  MOVWF  01
+01DE:  BRA    01E0
+.................... } 
+01E0:  GOTO   020C (RETURN)
+....................  
+....................  
+.................... //Função que faz o gerenciamento dos estados da máquina de estado. É chamada sempre que um byte chega da serial 
+.................... //parametros: byte recebido pela serial 
+.................... //saida: nenhum 
+.................... void MaquinaEstadoSerial(char ByteRecebido) 
+.................... { 
+.................... 	switch(EstadoSerial) 
+....................     { 
+*
+0220:  MOVF   3A,W
+0222:  XORLW  01
+0224:  BZ    023C
+0226:  XORLW  03
+0228:  BZ    0242
+022A:  XORLW  01
+022C:  BZ    0248
+022E:  XORLW  07
+0230:  BZ    024E
+0232:  XORLW  01
+0234:  BZ    0254
+0236:  XORLW  03
+0238:  BZ    025A
+023A:  BRA    0260
+....................         case ESTADO_STX: 
+....................         { 
+....................             AguardaSTX(ByteRecebido); 
+023C:  MOVFF  86,87
+0240:  BRA    0122
+....................             break;  
+....................         } 
+....................  
+.................... 		case ESTADO_ENDERECO: 
+....................         { 
+....................             AguardaEndereco(ByteRecebido); 
+0242:  MOVFF  86,87
+0246:  BRA    0146
+....................             break;  
+....................         } 
+.................... 		 
+....................         case ESTADO_OPCODE: 
+....................         { 
+....................             AguardaOpcode(ByteRecebido); 
+0248:  MOVFF  86,87
+024C:  BRA    015C
+....................             break;  
+....................         } 
+....................  
+....................         case ESTADO_TAMANHO: 
+....................         { 
+....................             AguardaTamanho(ByteRecebido); 
+024E:  MOVFF  86,87
+0252:  BRA    0168
+....................             break;  
+....................         } 
+....................  
+....................         case ESTADO_CHECKSUM: 
+....................         { 
+....................             AguardaCheckSum(ByteRecebido); 
+0254:  MOVFF  86,87
+0258:  BRA    0180
+....................             break;  
+....................         } 
+....................  
+....................         case ESTADO_BUFFER: 
+....................         { 
+....................             AguardaBuffer(ByteRecebido); 
+025A:  MOVFF  86,87
+025E:  BRA    01E4
+....................             break;  
+....................         } 
+....................  
+....................          
+....................         default:   //se o estado tiver qualquer valro diferente dos esperados, significa que algo corrompeu seu valor (invasão de memória RAM). Logo a máquina de estados é reuniciada. 
+....................         { 
+....................             EstadoSerial=ESTADO_STX; 
+0260:  MOVLW  01
+0262:  MOVWF  3A
+....................             RecebeuBufferCompleto = SEM_RECEPCAO; 
+0264:  CLRF   3C
+....................             memset(&DadosProtocoloLeitorAgua, 0, sizeof(TDadosProtocoloLeitorAgua));   //limpa dados do protocolo 
+0266:  CLRF   FEA
+0268:  MOVLW  21
+026A:  MOVWF  FE9
+026C:  CLRF   x88
+026E:  CLRF   x8A
+0270:  MOVLW  18
+0272:  MOVWF  x89
+0274:  RCALL  0108
+....................             break; 
+0276:  BRA    0278
+....................         } 
+....................     } 
+.................... } 
+0278:  GOTO   0288 (RETURN)
+....................  
+....................  
+.................... //função de configuração da interrupção UART 
+.................... //parametros: nenhum 
+.................... //saida: nenhum 
+.................... void ConfigInterrupcaoUART(void) 
+.................... {     
+....................     enable_interrupts(INT_RDA); 
+*
+09D2:  BSF    F9D.5
+....................     enable_interrupts(GLOBAL); 
+09D4:  MOVLW  C0
+09D6:  IORWF  FF2,F
+.................... } 
+09D8:  RETLW  00
+....................  
+.................... //função de configuração da interrupção externa 
+.................... //parametros: nenhum 
+.................... //saida: nenhum 
+.................... void ConfigInterrupcaoEXT(void) 
+.................... {     
+....................     ContadorPulsos = 0; 
+09DA:  CLRF   1A
+09DC:  CLRF   19
+....................     enable_interrupts(INT_EXT); 
+09DE:  BSF    FF2.4
+....................     enable_interrupts(GLOBAL); 
+09E0:  MOVLW  C0
+09E2:  IORWF  FF2,F
+....................     ext_int_edge(L_TO_H); 
+09E4:  BSF    FF1.6
+.................... } 
+09E6:  RETLW  00
+....................  
+....................  
+.................... //função de configuração do Timer1 
+.................... //parametros: nenhum 
+.................... //saida: nenhum 
+.................... void ConfigTimer1(void) 
+.................... { 
+....................     // - Frequencia do oscilador interno (4000000/4)=1Mhz (por default, o PIC funciona a 1/4 da frequencia de clock estabelecida) 
+.................... 	// - Se o Timer1 tem 16 bits, seu valor máximo de contagem é 0xFFFF (65535)	 
+.................... 	// - Com 1MHz de frequencia util, temos que cada ciclo de máquina terá, em segundos: 1 / 1MHz = 0,000001 (1us) 
+....................     // - Utilizando o prescaler do microcontrolador em 4 (ou seja, a frequencia util do timer1 é 1/4 da frequencia util do pic), temos: 
+....................     //   Periodo minimo "contável" pelo Timer1 =  (1 / (1MHz/4))   = 0,000004 (4us) 
+....................     // - Logo, a cada 16 bits contados, teremos: 65536 * 4us =  0,262144s 
+....................     // - visando maior precisão, sera feito um timer de 0,2s. Logo:    
+....................     //              0,262144s   ---  65536 
+....................     //                 0,20s     ---     x        x = 50000 
+....................     // Logo, o valor a ser setao no timer1 é: 65536 - 50000 = 15536 
+....................   
+....................     ContadorIntTimer=0; 
+*
+0EA6:  CLRF   3B
+....................     setup_timer_1(T1_INTERNAL| T1_DIV_BY_4); 
+0EA8:  MOVLW  A5
+0EAA:  MOVWF  FCD
+....................     set_timer1(15536); 
+0EAC:  MOVLW  3C
+0EAE:  MOVWF  FCF
+0EB0:  MOVLW  B0
+0EB2:  MOVWF  FCE
+....................     enable_interrupts(INT_TIMER1);       
+0EB4:  BSF    F9D.0
+....................     enable_interrupts(GLOBAL); 
+0EB6:  MOVLW  C0
+0EB8:  IORWF  FF2,F
+....................   
+.................... } 
+0EBA:  GOTO   1170 (RETURN)
+....................  
+.................... //formata e envia a mensagem (em resposta à solicitação) 
+.................... //parametros: opcode, tamanho, ponteiro pro dado ascii 
+.................... //saida: nenhum 
+.................... void MontaEEnviaMensagem(char Opcode, char Tamanho, char * Dado) 
+.................... { 
+....................     char BufferAscii[TAMANHO_MSG_RESPOSTA]; 
+....................     char CheckSumMsg; 
+....................     char i; 
+....................     char * ptrDado; 
+....................  
+....................     CheckSumMsg = 0; 
+*
+0F12:  CLRF   7F
+....................  
+....................     //monta mensagem de resposta à solicitação de consumo 
+....................     memset(BufferAscii,0,TAMANHO_MSG_RESPOSTA); 
+0F14:  CLRF   FEA
+0F16:  MOVLW  65
+0F18:  MOVWF  FE9
+0F1A:  CLRF   x88
+0F1C:  CLRF   x8A
+0F1E:  MOVLW  1A
+0F20:  MOVWF  x89
+0F22:  CALL   0108
+....................     BufferAscii[0]=STX; 
+0F26:  MOVLW  02
+0F28:  MOVWF  65
+.................... 	BufferAscii[1]=ENDERECO_BAREMETAL; 
+0F2A:  MOVLW  01
+0F2C:  MOVWF  66
+....................     BufferAscii[2]=Opcode;  
+0F2E:  MOVFF  61,67
+....................     BufferAscii[3]=Tamanho;  
+0F32:  MOVFF  62,68
+....................     
+....................     ptrDado = Dado; 
+0F36:  MOVFF  64,82
+0F3A:  MOVFF  63,81
+....................  
+....................     for(i=0; i<Tamanho; i++) 
+0F3E:  CLRF   x80
+0F40:  MOVF   62,W
+0F42:  SUBWF  x80,W
+0F44:  BC    0F5C
+....................     { 
+....................        	CheckSumMsg = CheckSumMsg + (*ptrDado); 
+0F46:  MOVFF  81,FE9
+0F4A:  MOVFF  82,FEA
+0F4E:  MOVF   FEF,W
+0F50:  ADDWF  7F,F
+.................... 		ptrDado++; 
+0F52:  INCF   x81,F
+0F54:  BTFSC  FD8.2
+0F56:  INCF   x82,F
+....................     } 
+0F58:  INCF   x80,F
+0F5A:  BRA    0F40
+....................  
+....................     CheckSumMsg = (~CheckSumMsg) + 1; 
+0F5C:  MOVF   7F,W
+0F5E:  XORLW  FF
+0F60:  ADDLW  01
+0F62:  MOVWF  7F
+....................     memcpy(BufferAscii+5,Dado,Tamanho); 
+0F64:  CLRF   FEA
+0F66:  MOVLW  6A
+0F68:  MOVWF  FE9
+0F6A:  MOVFF  64,FE2
+0F6E:  MOVFF  63,FE1
+0F72:  MOVF   62,W
+0F74:  MOVWF  01
+0F76:  BZ    0F80
+0F78:  MOVFF  FE6,FEE
+0F7C:  DECFSZ 01,F
+0F7E:  BRA    0F78
+....................    	BufferAscii[4]=CheckSumMsg; 
+0F80:  MOVFF  7F,69
+....................  
+....................     //envio da mensagem 
+....................     puts(BufferAscii);  
+0F84:  CLRF   FEA
+0F86:  MOVLW  65
+0F88:  MOVWF  FE9
+0F8A:  MOVLW  00
+0F8C:  IORWF  FEF,W
+0F8E:  BZ    0FA0
+0F90:  MOVF   FEF,W
+0F92:  BTFSS  F9E.4
+0F94:  BRA    0F92
+0F96:  MOVWF  FAD
+0F98:  INCF   FE9,F
+0F9A:  BTFSC  FD8.2
+0F9C:  INCF   FEA,F
+0F9E:  BRA    0F8A
+0FA0:  MOVLW  0D
+0FA2:  BTFSS  F9E.4
+0FA4:  BRA    0FA2
+0FA6:  MOVWF  FAD
+0FA8:  MOVLW  0A
+0FAA:  BTFSS  F9E.4
+0FAC:  BRA    0FAA
+0FAE:  MOVWF  FAD
+....................  
+.................... }  
+0FB0:  RETLW  00
+....................  
+.................... //Função:formata e envia a mensagem nula (em resposta à solicitação de comandos que não precisam retornar dados).  
+.................... //       entende-se por mensagem nula o envio de um espaço (0x20) na parte de dados do protocolo 
+.................... //parametros: opcode 
+.................... //saida: nenhum 
+.................... void MontaEEnviaMensagemNula(char Opcode) 
+.................... { 
+.................... 	char BufferAscii[TAMANHO_MSG_RESPOSTA]; 
+....................      
+....................     memset(BufferAscii,0,TAMANHO_MSG_RESPOSTA); 
+*
+0EBE:  CLRF   FEA
+0EC0:  MOVLW  62
+0EC2:  MOVWF  FE9
+0EC4:  CLRF   x88
+0EC6:  CLRF   x8A
+0EC8:  MOVLW  1A
+0ECA:  MOVWF  x89
+0ECC:  CALL   0108
+....................     BufferAscii[0]=STX; 
+0ED0:  MOVLW  02
+0ED2:  MOVWF  62
+....................     BufferAscii[1]=Opcode;  
+0ED4:  MOVFF  61,63
+....................     BufferAscii[2]=0x01; 
+0ED8:  MOVLW  01
+0EDA:  MOVWF  64
+....................     BufferAscii[4]=0x20; 
+0EDC:  MOVLW  20
+0EDE:  MOVWF  66
+.................... 	BufferAscii[3]=0xE0;  //((~0x20) + 1) 
+0EE0:  MOVLW  E0
+0EE2:  MOVWF  65
+....................      
+....................     //envio da mensagem  
+....................     puts(BufferAscii);  
+0EE4:  CLRF   FEA
+0EE6:  MOVLW  62
+0EE8:  MOVWF  FE9
+0EEA:  MOVLW  00
+0EEC:  IORWF  FEF,W
+0EEE:  BZ    0F00
+0EF0:  MOVF   FEF,W
+0EF2:  BTFSS  F9E.4
+0EF4:  BRA    0EF2
+0EF6:  MOVWF  FAD
+0EF8:  INCF   FE9,F
+0EFA:  BTFSC  FD8.2
+0EFC:  INCF   FEA,F
+0EFE:  BRA    0EEA
+0F00:  MOVLW  0D
+0F02:  BTFSS  F9E.4
+0F04:  BRA    0F02
+0F06:  MOVWF  FAD
+0F08:  MOVLW  0A
+0F0A:  BTFSS  F9E.4
+0F0C:  BRA    0F0A
+0F0E:  MOVWF  FAD
+.................... } 
+0F10:  RETLW  00
+....................  
+.................... //Trata mensagem recebida pela UART 
+.................... //parametros: nenhum 
+.................... //saida: nenhum 
+.................... void TrataMensagem(void) 
+.................... { 
+....................     char DadoVazio; 
+....................  
+....................     DadoVazio = 0x00; 
+*
+1074:  CLRF   60
+....................  
+....................     switch(DadosProtocoloLeitorAgua.Opcode) 
+.................... 	{ 
+1076:  MOVF   22,W
+1078:  XORLW  52
+107A:  BZ    1092
+107C:  XORLW  04
+107E:  BZ    109C
+1080:  XORLW  07
+1082:  BZ    10AE
+1084:  XORLW  1D
+1086:  BZ    10C0
+1088:  XORLW  09
+108A:  BZ    10D2
+108C:  XORLW  16
+108E:  BZ    10E2
+1090:  BRA    10EE
+.................... 		case OPCODE_RESET_CONSUMO: 
+.................... 		{ 
+.................... 		    ResetConsumoAcumulado(); 
+1092:  RCALL  0C50
+.................... 			MontaEEnviaMensagemNula(OPCODE_RESET_CONSUMO); 
+1094:  MOVLW  52
+1096:  MOVWF  61
+1098:  RCALL  0EBE
+.................... 			break; 
+109A:  BRA    1108
+.................... 		} 
+.................... 		 
+.................... 		case OPCODE_LEITURA_VAZAO: 
+.................... 		{ 
+.................... 		    MontaEEnviaMensagem(OPCODE_LEITURA_VAZAO, TAMANHO_VAZAO_ASCII,(char *)VazaoAscii); 
+109C:  MOVLW  56
+109E:  MOVWF  61
+10A0:  MOVLW  06
+10A2:  MOVWF  62
+10A4:  CLRF   64
+10A6:  MOVLW  3D
+10A8:  MOVWF  63
+10AA:  RCALL  0F12
+....................             break; 
+10AC:  BRA    1108
+.................... 		} 
+.................... 		 
+.................... 		case OPCODE_LEITURA_VERSAO: 
+.................... 		{ 
+.................... 		    MontaEEnviaMensagem(OPCODE_LEITURA_VERSAO, TAMANHO_VERSAO,(char *)VersaoEquipamento); 
+10AE:  MOVLW  51
+10B0:  MOVWF  61
+10B2:  MOVLW  05
+10B4:  MOVWF  62
+10B6:  CLRF   64
+10B8:  MOVLW  51
+10BA:  MOVWF  63
+10BC:  RCALL  0F12
+.................... 			break; 
+10BE:  BRA    1108
+.................... 		} 
+....................  
+.................... 		case OPCODE_LEITURA_CONSUMO: 
+.................... 		{ 
+.................... 		    MontaEEnviaMensagem(OPCODE_LEITURA_CONSUMO, TAMANHO_CONSUMO_ASCII,(char *)ConsumoAscii); 
+10C0:  MOVLW  4C
+10C2:  MOVWF  61
+10C4:  MOVLW  06
+10C6:  MOVWF  62
+10C8:  CLRF   64
+10CA:  MOVLW  48
+10CC:  MOVWF  63
+10CE:  RCALL  0F12
+.................... 			break; 
+10D0:  BRA    1108
+.................... 		} 
+....................  
+.................... 		case OPCODE_ENTRA_EM_CALIBRACAO: 
+.................... 		{ 
+.................... 			output_bit(BREATHING_LIGHT,1); 
+10D2:  BSF    F89.0
+10D4:  BCF    F92.0
+....................          	EstaEmModoCalibracao = SIM; 
+10D6:  MOVLW  01
+10D8:  MOVWF  5A
+....................             MontaEEnviaMensagemNula(OPCODE_ENTRA_EM_CALIBRACAO); 
+10DA:  MOVLW  45
+10DC:  MOVWF  61
+10DE:  RCALL  0EBE
+.................... 			break; 
+10E0:  BRA    1108
+.................... 		} 
+.................... 		 
+.................... 		case OPCODE_SAI_DA_CALIBRACAO: 
+.................... 		{ 
+.................... 			SalvaCalibracaoSensor(); 
+10E2:  BRA    0FB2
+.................... 			EstaEmModoCalibracao = NAO; 
+10E4:  CLRF   5A
+.................... 			MontaEEnviaMensagemNula(OPCODE_SAI_DA_CALIBRACAO); 
+10E6:  MOVLW  53
+10E8:  MOVWF  61
+10EA:  RCALL  0EBE
+.................... 			break; 
+10EC:  BRA    1108
+.................... 		} 
+.................... 		 
+....................         default: 
+....................         { 
+....................             RecebeuBufferCompleto = SEM_RECEPCAO; 
+10EE:  CLRF   3C
+....................           	EstadoSerial = ESTADO_STX; 
+10F0:  MOVLW  01
+10F2:  MOVWF  3A
+.................... 			 
+.................... 			//limpa dados do protocolo  
+....................             memset(&DadosProtocoloLeitorAgua, 0, sizeof(TDadosProtocoloLeitorAgua));   
+10F4:  CLRF   FEA
+10F6:  MOVLW  21
+10F8:  MOVWF  FE9
+10FA:  CLRF   x88
+10FC:  CLRF   x8A
+10FE:  MOVLW  18
+1100:  MOVWF  x89
+1102:  CALL   0108
+....................             break; 
+1106:  BRA    1108
+....................         } 
+.................... 	} 
+.................... } 
+1108:  GOTO   117C (RETURN)
+....................  
+.................... //Zera consumo acumulado 
+.................... //parametros: nenhum 
+.................... //saida: nenhum 
+.................... void ResetConsumoAcumulado(void) 
+.................... {	 
+.................... 	char i; 
+.................... 	char EnderecoEscritaEEPROM; 
+.................... 	 
+....................     //deliga todas interrupções 
+....................     disable_interrupts(INT_RDA); 
+*
+0C50:  BCF    F9D.5
+....................     disable_interrupts(INT_EXT); 
+0C52:  BCF    FF2.4
+....................  
+....................  
+.................... 	ConsumoCalculado=0; 
+0C54:  CLRF   47
+0C56:  CLRF   46
+0C58:  CLRF   45
+0C5A:  CLRF   44
+.................... 	ConsumoAscii[0]=' '; 
+0C5C:  MOVLW  20
+0C5E:  MOVWF  48
+....................     ConsumoAscii[1]='0'; 
+0C60:  MOVLW  30
+0C62:  MOVWF  49
+....................     ConsumoAscii[2]='.'; 
+0C64:  MOVLW  2E
+0C66:  MOVWF  4A
+....................     ConsumoAscii[3]='0'; 
+0C68:  MOVLW  30
+0C6A:  MOVWF  4B
+....................     ConsumoAscii[4]='0'; 
+0C6C:  MOVWF  4C
+....................     ConsumoAscii[5]=0; 
+0C6E:  CLRF   4D
+....................     ConsumoAscii[6]=0; 
+0C70:  CLRF   4E
+....................      
+.................... 	EnderecoEscritaEEPROM = ENDERECOCHAVE; 
+0C72:  MOVLW  01
+0C74:  MOVWF  63
+.................... 	 
+.................... 	//grava a chave na EEPROM 
+.................... 	for(i=0;i<sizeof(ChaveEEPROM);i++) 
+0C76:  CLRF   62
+0C78:  MOVF   62,W
+0C7A:  SUBLW  12
+0C7C:  BNC   0CC2
+.................... 	{ 
+.................... 		write_eeprom(EnderecoEscritaEEPROM,ChaveEEPROM[i]); 
+0C7E:  CLRF   03
+0C80:  MOVF   62,W
+0C82:  MOVFF  FF2,64
+0C86:  BCF    FF2.7
+0C88:  CALL   00B6
+0C8C:  BTFSC  64.7
+0C8E:  BSF    FF2.7
+0C90:  MOVWF  65
+0C92:  MOVFF  63,FA9
+0C96:  MOVWF  FA8
+0C98:  BCF    FA6.6
+0C9A:  BCF    FA6.7
+0C9C:  BSF    FA6.2
+0C9E:  MOVFF  FF2,00
+0CA2:  BCF    FF2.7
+0CA4:  MOVLB  F
+0CA6:  MOVLW  55
+0CA8:  MOVWF  FA7
+0CAA:  MOVLW  AA
+0CAC:  MOVWF  FA7
+0CAE:  BSF    FA6.1
+0CB0:  BTFSC  FA6.1
+0CB2:  BRA    0CB0
+0CB4:  BCF    FA6.2
+0CB6:  MOVF   00,W
+0CB8:  IORWF  FF2,F
+.................... 		EnderecoEscritaEEPROM++; 
+0CBA:  INCF   63,F
+.................... 	}	 
+0CBC:  INCF   62,F
+0CBE:  MOVLB  0
+0CC0:  BRA    0C78
+.................... 	 
+.................... 	//grava consumo 
+.................... 	for (i = 0; i < 4; i++)  
+0CC2:  CLRF   62
+0CC4:  MOVF   62,W
+0CC6:  SUBLW  03
+0CC8:  BNC   0D18
+.................... 	{ 
+.................... 		write_eeprom(EnderecoEscritaEEPROM, *((int8*)&ConsumoCalculado + i) ) ;  
+0CCA:  CLRF   65
+0CCC:  MOVLW  44
+0CCE:  MOVWF  64
+0CD0:  MOVF   62,W
+0CD2:  ADDWF  64,W
+0CD4:  MOVWF  01
+0CD6:  MOVLW  00
+0CD8:  ADDWFC 65,W
+0CDA:  MOVWF  03
+0CDC:  MOVFF  01,FE9
+0CE0:  MOVWF  FEA
+0CE2:  MOVFF  FEF,66
+0CE6:  MOVFF  63,FA9
+0CEA:  MOVFF  66,FA8
+0CEE:  BCF    FA6.6
+0CF0:  BCF    FA6.7
+0CF2:  BSF    FA6.2
+0CF4:  MOVFF  FF2,00
+0CF8:  BCF    FF2.7
+0CFA:  MOVLB  F
+0CFC:  MOVLW  55
+0CFE:  MOVWF  FA7
+0D00:  MOVLW  AA
+0D02:  MOVWF  FA7
+0D04:  BSF    FA6.1
+0D06:  BTFSC  FA6.1
+0D08:  BRA    0D06
+0D0A:  BCF    FA6.2
+0D0C:  MOVF   00,W
+0D0E:  IORWF  FF2,F
+.................... 		EnderecoEscritaEEPROM++; 
+0D10:  INCF   63,F
+....................     }	 
+0D12:  INCF   62,F
+0D14:  MOVLB  0
+0D16:  BRA    0CC4
+....................  
+....................     //configura timer e religa interrupções	 
+....................     set_timer1(15536); 
+0D18:  MOVLW  3C
+0D1A:  MOVWF  FCF
+0D1C:  MOVLW  B0
+0D1E:  MOVWF  FCE
+....................     ConfigInterrupcaoUART(); 
+0D20:  RCALL  09D2
+....................     ConfigInterrupcaoEXT(); 
+0D22:  RCALL  09DA
+.................... } 
+0D24:  RETLW  00
+....................  
+.................... //Grava que equipamento está sem calibração 
+.................... //parametros: nenhum 
+.................... //saida: nenhum 
+.................... void ResetCalibracaoSensor(void) 
+.................... {	 
+.................... 	char i; 
+.................... 	char EnderecoEscritaEEPROM; 
+.................... 	 
+....................     //deliga todas interrupções 
+....................     disable_interrupts(INT_RDA); 
+*
+0D7C:  BCF    F9D.5
+....................     disable_interrupts(INT_EXT); 
+0D7E:  BCF    FF2.4
+....................  
+.................... 	PulsosPorLitro = 0; 
+0D80:  CLRF   58
+0D82:  CLRF   57
+.................... 	ConsumoAscii[0]=' '; 
+0D84:  MOVLW  20
+0D86:  MOVWF  48
+....................     ConsumoAscii[1]='0'; 
+0D88:  MOVLW  30
+0D8A:  MOVWF  49
+....................     ConsumoAscii[2]='.'; 
+0D8C:  MOVLW  2E
+0D8E:  MOVWF  4A
+....................     ConsumoAscii[3]='0'; 
+0D90:  MOVLW  30
+0D92:  MOVWF  4B
+....................     ConsumoAscii[4]='0'; 
+0D94:  MOVWF  4C
+....................     ConsumoAscii[5]=0; 
+0D96:  CLRF   4D
+....................     ConsumoAscii[6]=0; 
+0D98:  CLRF   4E
+....................      
+.................... 	EnderecoEscritaEEPROM = ENDERECOCALIBRACAO; 
+0D9A:  MOVLW  40
+0D9C:  MOVWF  63
+.................... 	 
+.................... 	//grava a chave na EEPROM 
+.................... 	for(i=0;i<sizeof(ChaveEEPROM);i++) 
+0D9E:  CLRF   62
+0DA0:  MOVF   62,W
+0DA2:  SUBLW  12
+0DA4:  BNC   0DEA
+.................... 	{ 
+.................... 		write_eeprom(EnderecoEscritaEEPROM,ChaveEEPROM[i]); 
+0DA6:  CLRF   03
+0DA8:  MOVF   62,W
+0DAA:  MOVFF  FF2,64
+0DAE:  BCF    FF2.7
+0DB0:  CALL   00B6
+0DB4:  BTFSC  64.7
+0DB6:  BSF    FF2.7
+0DB8:  MOVWF  65
+0DBA:  MOVFF  63,FA9
+0DBE:  MOVWF  FA8
+0DC0:  BCF    FA6.6
+0DC2:  BCF    FA6.7
+0DC4:  BSF    FA6.2
+0DC6:  MOVFF  FF2,00
+0DCA:  BCF    FF2.7
+0DCC:  MOVLB  F
+0DCE:  MOVLW  55
+0DD0:  MOVWF  FA7
+0DD2:  MOVLW  AA
+0DD4:  MOVWF  FA7
+0DD6:  BSF    FA6.1
+0DD8:  BTFSC  FA6.1
+0DDA:  BRA    0DD8
+0DDC:  BCF    FA6.2
+0DDE:  MOVF   00,W
+0DE0:  IORWF  FF2,F
+.................... 		EnderecoEscritaEEPROM++; 
+0DE2:  INCF   63,F
+.................... 	}	 
+0DE4:  INCF   62,F
+0DE6:  MOVLB  0
+0DE8:  BRA    0DA0
+.................... 	 
+.................... 	//grava consumo 
+.................... 	for (i = 0; i < 4; i++)  
+0DEA:  CLRF   62
+0DEC:  MOVF   62,W
+0DEE:  SUBLW  03
+0DF0:  BNC   0E40
+.................... 	{ 
+.................... 		write_eeprom(EnderecoEscritaEEPROM, *((int8*)&PulsosPorLitro + i) ) ;  
+0DF2:  CLRF   65
+0DF4:  MOVLW  57
+0DF6:  MOVWF  64
+0DF8:  MOVF   62,W
+0DFA:  ADDWF  64,W
+0DFC:  MOVWF  01
+0DFE:  MOVLW  00
+0E00:  ADDWFC 65,W
+0E02:  MOVWF  03
+0E04:  MOVFF  01,FE9
+0E08:  MOVWF  FEA
+0E0A:  MOVFF  FEF,66
+0E0E:  MOVFF  63,FA9
+0E12:  MOVFF  66,FA8
+0E16:  BCF    FA6.6
+0E18:  BCF    FA6.7
+0E1A:  BSF    FA6.2
+0E1C:  MOVFF  FF2,00
+0E20:  BCF    FF2.7
+0E22:  MOVLB  F
+0E24:  MOVLW  55
+0E26:  MOVWF  FA7
+0E28:  MOVLW  AA
+0E2A:  MOVWF  FA7
+0E2C:  BSF    FA6.1
+0E2E:  BTFSC  FA6.1
+0E30:  BRA    0E2E
+0E32:  BCF    FA6.2
+0E34:  MOVF   00,W
+0E36:  IORWF  FF2,F
+.................... 		EnderecoEscritaEEPROM++; 
+0E38:  INCF   63,F
+....................     } 
+0E3A:  INCF   62,F
+0E3C:  MOVLB  0
+0E3E:  BRA    0DEC
+....................  
+.................... 	//configura timer e religa interrupções	 
+....................     set_timer1(15536); 
+0E40:  MOVLW  3C
+0E42:  MOVWF  FCF
+0E44:  MOVLW  B0
+0E46:  MOVWF  FCE
+....................     ConfigInterrupcaoUART(); 
+0E48:  RCALL  09D2
+....................     ConfigInterrupcaoEXT(); 
+0E4A:  RCALL  09DA
+.................... 	 
+.................... } 
+0E4C:  GOTO   0E5C (RETURN)
+....................  
+....................  
+....................  
+.................... //Verifica se a chave da EEPROM está gravada 
+.................... //parametros: endereço inicial da chave procurada 
+.................... //saida: 0 - chave não está gravada 
+.................... //       1 - chave está gravada  
+.................... char VerificaChaveEEPROM(char EnderecoInicialChave) 
+.................... { 
+.................... 	char i; 
+....................     char Iguais; 
+.................... 	 
+....................     Iguais=0; 
+*
+0BF2:  CLRF   64
+.................... 	//le da EERPOM a chave gravada 
+.................... 	for(i=0; i<TAMANHO_CHAVE_EEPROM; i++) 
+0BF4:  CLRF   63
+0BF6:  MOVF   63,W
+0BF8:  SUBLW  12
+0BFA:  BNC   0C3A
+....................     { 
+.................... 		if (read_eeprom(EnderecoInicialChave+i) == ChaveEEPROM[i]) 
+0BFC:  MOVF   63,W
+0BFE:  ADDWF  62,W
+0C00:  MOVWF  65
+0C02:  MOVFF  FF2,66
+0C06:  BCF    FF2.7
+0C08:  MOVFF  65,FA9
+0C0C:  BCF    FA6.6
+0C0E:  BCF    FA6.7
+0C10:  BSF    FA6.0
+0C12:  MOVF   FA8,W
+0C14:  BTFSC  66.7
+0C16:  BSF    FF2.7
+0C18:  MOVWF  66
+0C1A:  CLRF   03
+0C1C:  MOVF   63,W
+0C1E:  MOVFF  FF2,67
+0C22:  BCF    FF2.7
+0C24:  CALL   00B6
+0C28:  BTFSC  67.7
+0C2A:  BSF    FF2.7
+0C2C:  MOVWF  01
+0C2E:  MOVF   01,W
+0C30:  SUBWF  66,W
+0C32:  BNZ   0C36
+.................... 			Iguais++; 
+0C34:  INCF   64,F
+....................     } 
+0C36:  INCF   63,F
+0C38:  BRA    0BF6
+.................... 		 
+.................... 	if (Iguais == TAMANHO_CHAVE_EEPROM)	 
+0C3A:  MOVF   64,W
+0C3C:  SUBLW  13
+0C3E:  BNZ   0C48
+.................... 		return SIM; 
+0C40:  MOVLW  01
+0C42:  MOVWF  01
+0C44:  BRA    0C4E
+.................... 	else 
+0C46:  BRA    0C4E
+.................... 		return NAO; 
+0C48:  MOVLW  00
+0C4A:  MOVWF  01
+0C4C:  BRA    0C4E
+.................... } 
+0C4E:  RETLW  00
+....................  
+.................... //Le consumo de água acumulado 
+.................... //parametros: nenhum 
+.................... //saida: nenhum 
+.................... void LeConsumoAcumulado(void) 
+.................... { 
+.................... 	char EnderecoLeituraEEPROM; 
+....................     char i; 
+....................  
+.................... 	if (VerificaChaveEEPROM(ENDERECOCHAVE) == NAO)   //verifica se a EEPROM contem a chave gravada 
+*
+0D26:  MOVLW  01
+0D28:  MOVWF  62
+0D2A:  RCALL  0BF2
+0D2C:  MOVF   01,F
+0D2E:  BNZ   0D34
+.................... 		ResetConsumoAcumulado(); 
+0D30:  RCALL  0C50
+.................... 	else 
+0D32:  BRA    0D78
+.................... 	{	 
+.................... 		//a chave gravada está correta. O consumo de água é lido. 
+.................... 		EnderecoLeituraEEPROM = ENDERECOCHAVE + TAMANHO_CHAVE_EEPROM; 
+0D34:  MOVLW  14
+0D36:  MOVWF  60
+.................... 		 
+.................... 	    for (i = 0; i < 4; i++)  
+0D38:  CLRF   61
+0D3A:  MOVF   61,W
+0D3C:  SUBLW  03
+0D3E:  BNC   0D78
+.................... 	    { 
+.................... 			*((int8*)&ConsumoCalculado + i) = read_eeprom(EnderecoLeituraEEPROM);  
+0D40:  CLRF   63
+0D42:  MOVLW  44
+0D44:  MOVWF  62
+0D46:  MOVF   61,W
+0D48:  ADDWF  62,W
+0D4A:  MOVWF  01
+0D4C:  MOVLW  00
+0D4E:  ADDWFC 63,W
+0D50:  MOVWF  03
+0D52:  MOVF   01,W
+0D54:  MOVWF  FE9
+0D56:  MOVFF  03,FEA
+0D5A:  MOVFF  FF2,66
+0D5E:  BCF    FF2.7
+0D60:  MOVFF  60,FA9
+0D64:  BCF    FA6.6
+0D66:  BCF    FA6.7
+0D68:  BSF    FA6.0
+0D6A:  MOVF   FA8,W
+0D6C:  BTFSC  66.7
+0D6E:  BSF    FF2.7
+0D70:  MOVWF  FEF
+.................... 			EnderecoLeituraEEPROM++; 
+0D72:  INCF   60,F
+....................         } 
+0D74:  INCF   61,F
+0D76:  BRA    0D3A
+....................    	} 
+.................... } 
+0D78:  GOTO   1168 (RETURN)
+....................  
+.................... //Le calibração do sensor 
+.................... //parametros: nenhum 
+.................... //saida: nenhum 
+.................... void LeCalibracaoSensor(void) 
+.................... { 
+.................... 	char EnderecoLeituraEEPROM; 
+....................     char i; 
+....................  
+.................... 	if (VerificaChaveEEPROM(ENDERECOCALIBRACAO) == NAO)   //verifica se a EEPROM contem a chave gravada 
+*
+0E50:  MOVLW  40
+0E52:  MOVWF  62
+0E54:  RCALL  0BF2
+0E56:  MOVF   01,F
+0E58:  BNZ   0E5E
+.................... 	{ 
+.................... 		ResetCalibracaoSensor(); 
+0E5A:  BRA    0D7C
+.................... 	} 
+.................... 	else 
+0E5C:  BRA    0EA2
+.................... 	{ 
+.................... 		//a chave gravada está correta. A calibração do sensor é lida 
+.................... 		EnderecoLeituraEEPROM = ENDERECOCALIBRACAO + TAMANHO_CHAVE_EEPROM; 
+0E5E:  MOVLW  53
+0E60:  MOVWF  60
+.................... 		 
+.................... 	    for (i = 0; i < 2; i++)  
+0E62:  CLRF   61
+0E64:  MOVF   61,W
+0E66:  SUBLW  01
+0E68:  BNC   0EA2
+.................... 	    { 
+.................... 			*((int8*)&PulsosPorLitro + i) = read_eeprom(EnderecoLeituraEEPROM);  
+0E6A:  CLRF   63
+0E6C:  MOVLW  57
+0E6E:  MOVWF  62
+0E70:  MOVF   61,W
+0E72:  ADDWF  62,W
+0E74:  MOVWF  01
+0E76:  MOVLW  00
+0E78:  ADDWFC 63,W
+0E7A:  MOVWF  03
+0E7C:  MOVF   01,W
+0E7E:  MOVWF  FE9
+0E80:  MOVFF  03,FEA
+0E84:  MOVFF  FF2,66
+0E88:  BCF    FF2.7
+0E8A:  MOVFF  60,FA9
+0E8E:  BCF    FA6.6
+0E90:  BCF    FA6.7
+0E92:  BSF    FA6.0
+0E94:  MOVF   FA8,W
+0E96:  BTFSC  66.7
+0E98:  BSF    FF2.7
+0E9A:  MOVWF  FEF
+.................... 			EnderecoLeituraEEPROM++; 
+0E9C:  INCF   60,F
+....................         } 
+0E9E:  INCF   61,F
+0EA0:  BRA    0E64
+.................... 	} 
+.................... } 
+0EA2:  GOTO   116A (RETURN)
+....................  
+.................... //Salva calibração do sensor 
+.................... //parametros: nenhum 
+.................... //saida: nenhum 
+.................... void SalvaCalibracaoSensor(void) 
+.................... { 
+.................... 	char EnderecoEscritaEEPROM; 
+....................     char i; 
+....................  
+....................     //deliga todas interrupções 
+....................     disable_interrupts(INT_RDA); 
+*
+0FB2:  BCF    F9D.5
+....................     disable_interrupts(INT_EXT); 
+0FB4:  BCF    FF2.4
+.................... 	 
+.................... 	PulsosPorLitro = ContadorPulsos; 
+0FB6:  MOVFF  1A,58
+0FBA:  MOVFF  19,57
+.................... 	EnderecoEscritaEEPROM = ENDERECOCALIBRACAO; 
+0FBE:  MOVLW  40
+0FC0:  MOVWF  61
+.................... 	 
+.................... 	//grava a chave na EEPROM 
+.................... 	for(i=0;i<sizeof(ChaveEEPROM);i++) 
+0FC2:  CLRF   62
+0FC4:  MOVF   62,W
+0FC6:  SUBLW  12
+0FC8:  BNC   100E
+.................... 	{ 
+.................... 		write_eeprom(EnderecoEscritaEEPROM,ChaveEEPROM[i]); 
+0FCA:  CLRF   03
+0FCC:  MOVF   62,W
+0FCE:  MOVFF  FF2,63
+0FD2:  BCF    FF2.7
+0FD4:  CALL   00B6
+0FD8:  BTFSC  63.7
+0FDA:  BSF    FF2.7
+0FDC:  MOVWF  64
+0FDE:  MOVFF  61,FA9
+0FE2:  MOVWF  FA8
+0FE4:  BCF    FA6.6
+0FE6:  BCF    FA6.7
+0FE8:  BSF    FA6.2
+0FEA:  MOVFF  FF2,00
+0FEE:  BCF    FF2.7
+0FF0:  MOVLB  F
+0FF2:  MOVLW  55
+0FF4:  MOVWF  FA7
+0FF6:  MOVLW  AA
+0FF8:  MOVWF  FA7
+0FFA:  BSF    FA6.1
+0FFC:  BTFSC  FA6.1
+0FFE:  BRA    0FFC
+1000:  BCF    FA6.2
+1002:  MOVF   00,W
+1004:  IORWF  FF2,F
+.................... 		EnderecoEscritaEEPROM++; 
+1006:  INCF   61,F
+.................... 	}	 
+1008:  INCF   62,F
+100A:  MOVLB  0
+100C:  BRA    0FC4
+.................... 	 
+.................... 	//grava consumo 
+.................... 	for (i = 0; i < 2; i++)  
+100E:  CLRF   62
+1010:  MOVF   62,W
+1012:  SUBLW  01
+1014:  BNC   1064
+.................... 	{ 
+.................... 		write_eeprom(EnderecoEscritaEEPROM, *((int8*)&PulsosPorLitro + i) ) ;  
+1016:  CLRF   64
+1018:  MOVLW  57
+101A:  MOVWF  63
+101C:  MOVF   62,W
+101E:  ADDWF  63,W
+1020:  MOVWF  01
+1022:  MOVLW  00
+1024:  ADDWFC 64,W
+1026:  MOVWF  03
+1028:  MOVFF  01,FE9
+102C:  MOVWF  FEA
+102E:  MOVFF  FEF,65
+1032:  MOVFF  61,FA9
+1036:  MOVFF  65,FA8
+103A:  BCF    FA6.6
+103C:  BCF    FA6.7
+103E:  BSF    FA6.2
+1040:  MOVFF  FF2,00
+1044:  BCF    FF2.7
+1046:  MOVLB  F
+1048:  MOVLW  55
+104A:  MOVWF  FA7
+104C:  MOVLW  AA
+104E:  MOVWF  FA7
+1050:  BSF    FA6.1
+1052:  BTFSC  FA6.1
+1054:  BRA    1052
+1056:  BCF    FA6.2
+1058:  MOVF   00,W
+105A:  IORWF  FF2,F
+.................... 		EnderecoEscritaEEPROM++; 
+105C:  INCF   61,F
+....................     } 
+105E:  INCF   62,F
+1060:  MOVLB  0
+1062:  BRA    1010
+.................... 	 
+.................... 	//configura timer e religa interrupções	 
+....................     set_timer1(15536); 
+1064:  MOVLW  3C
+1066:  MOVWF  FCF
+1068:  MOVLW  B0
+106A:  MOVWF  FCE
+....................     ConfigInterrupcaoUART(); 
+106C:  RCALL  09D2
+....................     ConfigInterrupcaoEXT(); 
+106E:  RCALL  09DA
+.................... } 
+1070:  GOTO   10E4 (RETURN)
+....................  
+.................... //programa principal 
+.................... void main(void) 
+.................... { 
+*
+110C:  CLRF   FF8
+110E:  BCF    FD0.7
+1110:  BSF    0D.7
+1112:  CLRF   FEA
+1114:  CLRF   FE9
+1116:  BCF    FB8.3
+1118:  MOVLW  19
+111A:  MOVWF  FAF
+111C:  MOVLW  A6
+111E:  MOVWF  FAC
+1120:  MOVLW  90
+1122:  MOVWF  FAB
+1124:  MOVF   FC1,W
+1126:  ANDLW  C0
+1128:  IORLW  0F
+112A:  MOVWF  FC1
+112C:  MOVLW  07
+112E:  MOVWF  FB4
+1130:  MOVLW  56
+1132:  MOVWF  51
+1134:  MOVLW  31
+1136:  MOVWF  52
+1138:  MOVLW  2E
+113A:  MOVWF  53
+113C:  MOVLW  30
+113E:  MOVWF  54
+1140:  MOVWF  55
+1142:  CLRF   56
+1144:  CLRF   5B
+1146:  CLRF   5C
+1148:  CLRF   5D
+....................     char i; 
+....................     char EnderecoEscritaEEPROM; 
+.................... 	 
+.................... 	//inicialização de variáveis globais 
+....................     FrequenciaCalculada = 0; 
+114A:  CLRF   1C
+114C:  CLRF   1B
+....................     ContadorPulsos = 0; 
+114E:  CLRF   1A
+1150:  CLRF   19
+....................     TempoSalvamentoConsumo = 0; 
+1152:  CLRF   50
+1154:  CLRF   4F
+....................     RecebeuBufferCompleto = SEM_RECEPCAO; 
+1156:  CLRF   3C
+....................  	EstadoSerial = ESTADO_STX;  
+1158:  MOVLW  01
+115A:  MOVWF  3A
+....................     DeveGravarConsumo = NAO; 
+115C:  CLRF   59
+.................... 	EstaEmModoCalibracao = NAO; 
+115E:  CLRF   5A
+....................     EnderecoEscritaEEPROM = ENDERECOCHAVE; 
+1160:  MOVWF  5F
+.................... 	 
+....................     //liga breathing light 
+....................     output_bit(BREATHING_LIGHT,1); 
+1162:  BSF    F89.0
+1164:  BCF    F92.0
+....................  
+.................... 	//faz a leitura do consumo acumulado de água 
+.................... 	LeConsumoAcumulado(); 
+1166:  BRA    0D26
+.................... 	 
+.................... 	//Le a calibração de pulsos gravada na eeprom 
+.................... 	LeCalibracaoSensor(); 
+1168:  BRA    0E50
+.................... 	 
+....................     //configuração das interrupções (UART e interrupção externa) 
+....................  	ConfigInterrupcaoUART(); 
+116A:  RCALL  09D2
+.................... 	ConfigInterrupcaoEXT(); 
+116C:  RCALL  09DA
+....................  
+....................     //configura Timer1  
+....................     ConfigTimer1(); 
+116E:  BRA    0EA6
+....................  
+....................     setup_wdt(WDT_ON); 
+1170:  BSF    FD1.0
+....................     
+....................     while(1) 
+.................... 	{		 
+.................... 		restart_wdt(); 
+1172:  CLRWDT
+....................  
+....................         if (RecebeuBufferCompleto == RECEPCAO_OK)   //trata buffer recebido (visando otimização de desempenho de interrupção serial,  este tratamento é feito aqui) 
+1174:  DECFSZ 3C,W
+1176:  BRA    117C
+.................... 		{ 
+.................... 			RecebeuBufferCompleto=SEM_RECEPCAO; 
+1178:  CLRF   3C
+....................             TrataMensagem(); 
+117A:  BRA    1074
+.................... 		} 
+.................... 		 
+.................... 		//verifica se deve gravar consumo na EEPROM 
+.................... 		if ((DeveGravarConsumo == SIM) && (EstaEmModoCalibracao == NAO)) 
+117C:  DECFSZ 59,W
+117E:  BRA    11F4
+1180:  MOVF   5A,F
+1182:  BNZ   11F4
+.................... 		{ 
+.................... 			//deliga todas interrupções 
+....................             disable_interrupts(INT_RDA); 
+1184:  BCF    F9D.5
+....................             disable_interrupts(INT_EXT); 
+1186:  BCF    FF2.4
+....................  
+....................             //consumo deve ser gravado 
+.................... 			for (i = 0; i < 4; i++)  
+1188:  CLRF   5E
+118A:  MOVF   5E,W
+118C:  SUBLW  03
+118E:  BNC   11DE
+.................... 			{ 
+.................... 				write_eeprom(EnderecoEscritaEEPROM, *((int8*)&ConsumoCalculado + i) ) ;  
+1190:  CLRF   61
+1192:  MOVLW  44
+1194:  MOVWF  60
+1196:  MOVF   5E,W
+1198:  ADDWF  60,W
+119A:  MOVWF  01
+119C:  MOVLW  00
+119E:  ADDWFC 61,W
+11A0:  MOVWF  03
+11A2:  MOVFF  01,FE9
+11A6:  MOVWF  FEA
+11A8:  MOVFF  FEF,62
+11AC:  MOVFF  5F,FA9
+11B0:  MOVFF  62,FA8
+11B4:  BCF    FA6.6
+11B6:  BCF    FA6.7
+11B8:  BSF    FA6.2
+11BA:  MOVFF  FF2,00
+11BE:  BCF    FF2.7
+11C0:  MOVLB  F
+11C2:  MOVLW  55
+11C4:  MOVWF  FA7
+11C6:  MOVLW  AA
+11C8:  MOVWF  FA7
+11CA:  BSF    FA6.1
+11CC:  BTFSC  FA6.1
+11CE:  BRA    11CC
+11D0:  BCF    FA6.2
+11D2:  MOVF   00,W
+11D4:  IORWF  FF2,F
+.................... 				EnderecoEscritaEEPROM++; 
+11D6:  INCF   5F,F
+.................... 			} 
+11D8:  INCF   5E,F
+11DA:  MOVLB  0
+11DC:  BRA    118A
+.................... 			DeveGravarConsumo = NAO; 
+11DE:  CLRF   59
+.................... 			TempoSalvamentoConsumo = 0; 
+11E0:  CLRF   50
+11E2:  CLRF   4F
+....................  
+.................... 			//configura timer e religa interrupções	 
+....................             set_timer1(15536); 
+11E4:  MOVLW  3C
+11E6:  MOVWF  FCF
+11E8:  MOVLW  B0
+11EA:  MOVWF  FCE
+....................             ConfigInterrupcaoUART(); 
+11EC:  CALL   09D2
+....................             ConfigInterrupcaoEXT(); 
+11F0:  CALL   09DA
+.................... 		} 
+.................... 	} 
+11F4:  BRA    1172
+.................... } 
+11F6:  SLEEP 
+
+Configuration Fuses:
+   Word  1: 0200   HS NOIESO NOFCMEN RESERVED
+   Word  2: 0F1E   BROWNOUT WDT128 WDT BORV25 PUT
+   Word  3: 8300   PBADEN CCP2C1 NOLPT1OSC MCLR RESERVED
+   Word  4: 0081   STVREN NODEBUG NOLVP NOXINST RESERVED
+   Word  5: C00F   NOPROTECT NOCPD NOCPB
+   Word  6: E00F   NOWRT NOWRTD NOWRTC NOWRTB
+   Word  7: 400F   NOEBTR NOEBTRB

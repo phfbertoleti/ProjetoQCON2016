@@ -1,0 +1,4 @@
+>>> Warning 203 "leitorfluxoagua.c" Line 702(1,1): Condition always TRUE
+>>> Warning 202 "leitorfluxoagua.c" Line 11(5,8): Variable never used:   rs232_errors
+      Memory usage:   ROM=14%      RAM=6% - 10%
+      0 Errors,  2 Warnings.

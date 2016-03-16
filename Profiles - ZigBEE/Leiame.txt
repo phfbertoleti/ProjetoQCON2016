@@ -1,0 +1,3 @@
+IMPORTANTE:
+
+Ao carregar os perfis, não esquecer de inserir a mesma chave de encriptação nos end devices e coordenadores. Caso contrário, a comunicação encriptada não funcionará.

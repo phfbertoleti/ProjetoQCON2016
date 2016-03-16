@@ -1,0 +1,44 @@
+_RETURN_
+CCP_1
+CCP_1_LOW
+CCP_1_HIGH
+CCP_2
+CCP_2_LOW
+CCP_2_HIGH
+PSP_DATA
+C1OUT
+C2OUT
+ContadorPulsos
+FrequenciaCalculada
+DadosProtocoloLeitorAgua
+IndiceBuffer
+EstadoSerial
+RecebeuBufferCompleto
+rs232_errors
+
+Project Directory:
+    C:\Projetos - PIC\LeitorFluxoAguaCCS\
+
+Project Files:
+    leitorfluxoagua.c
+    ..\..\PROGRA~2\PICC\devices\18F4520.h
+    HeaderLeitor.h
+    HeaderTratamentoSerial.h
+
+Units:
+    leitorfluxoagua.c (main)
+
+Compiler Settings:
+    Processor:      PIC18F4520
+    Pointer Size:   16
+    ADC Range:      0-255
+    Opt Level:      9
+    Short,Int,Long: UNSIGNED: 1,8,16
+    Float,Double:   32,32
+    Output file:    Relocatable
+
+Output Files:
+    Errors:      leitorfluxoagua.err
+    Ext Symbols: leitorfluxoagua.esym
+    Object:      leitorfluxoagua.o
+    Symbols:     leitorfluxoagua.osym
